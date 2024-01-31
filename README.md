@@ -2,8 +2,7 @@
 
 利用 Surge 的 MiTM 功能拦截请求，并利用 Docker 服务模拟后端操作，从而实现 Raycast 的激活。
 
-Docker 服务是一个简单的 [Raycast AI](https://raycast.com/)API 代理。它允许您在不订阅的情况下使用 [Raycast AI](https://raycast.com/ai)
-应用。它是一个简单的代理，将 raycast 的请求转换格式转发到 OpenAI 的 API，响应后再实时转换格式返回。
+Docker 服务是一个简单的 [Raycast](https://raycast.com/) 的 API 代理。它允许您在不订阅的情况下使用包括 [Raycast AI](https://raycast.com/ai) 在内的 Pro 功能（但是 AI 需要你拥有自己的 API Key）。它的工作原理是，对于非 AI Completions 之外的某些请求的返回值修改关键字段，而对于 AI Completions 的请求，将 Raycast 的请求转换格式转发到 OpenAI 的 API，响应后再实时转换格式返回。
 
 Docker 服务修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)。由于我在迁移的时候出现了问题，新建此仓库后失去了 `fork` 的属性。但保留了 `.git` 贡献历史。
 
@@ -12,6 +11,7 @@ Docker 服务修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikan
 -   Surge 激活版本
 -   一台云服务器，拥有 Docker、公网 IP
 -   一个域名
+-   一个 Open AI 格式的 API Key 与对应的 Base URL
 
 本文用到的的服务器配置为：Ubuntu 22.04，1Panel + OpenResty + Docker
 
