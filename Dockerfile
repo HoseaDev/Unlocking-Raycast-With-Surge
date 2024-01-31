@@ -1,28 +1,18 @@
-# build stage
-FROM python:3.9 AS builder
-
-# install PDM
-RUN pip install -U pip setuptools wheel
-RUN pip install pdm
-
-# copy files
-COPY pyproject.toml pdm.lock README.md /project/
-
-# install dependencies and project into the local packages directory
-WORKDIR /project
-RUN mkdir __pypackages__ && pdm install --prod --no-lock --no-editable
-
 # run stage
 FROM python:3.9-slim
 
-# retrieve packages from build stage
-ENV PYTHONPATH=/project/pkgs
-COPY --from=builder /project/__pypackages__/3.9/lib /project/pkgs
+# set working directory
+WORKDIR /project
+
+# copy the rest of the application files
+COPY requirements.txt /project/
+# install dependencies
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
 COPY app /project/app
 COPY scripts/entrypoint.sh /
 
 EXPOSE 80
 
-WORKDIR /project
 # set command/entrypoint, adapt to fit your needs
-ENTRYPOINT sh /entrypoint.sh
+ENTRYPOINT ["sh", "/entrypoint.sh"]

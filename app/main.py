@@ -174,14 +174,18 @@ async def chat_completions_openai(raycast_data: dict):
             temperature=temperature,
             stream=True,
         )
-        for response in stream:
-            chunk = response.choices[0]
-            if chunk.finish_reason is not None:
-                logger.debug(f"OpenAI response finish: {chunk.finish_reason}")
-                yield f'data: {json.dumps({"text": "", "finish_reason": chunk.finish_reason})}\n\n'
-            if chunk.delta and chunk.delta.content:
-                logger.debug(f"OpenAI response chunk: {chunk.delta.content}")
-                yield f'data: {json.dumps({"text": chunk.delta.content})}\n\n'
+        try:
+            for response in stream:
+                chunk = response.choices[0]
+                if chunk.finish_reason is not None:
+                    logger.debug(f"OpenAI response finish: {chunk.finish_reason}")
+                    yield f'data: {json.dumps({"text": "", "finish_reason": chunk.finish_reason})}\n\n'
+                if chunk.delta and chunk.delta.content:
+                    logger.debug(f"OpenAI response chunk: {chunk.delta.content}")
+                    yield f'data: {json.dumps({"text": chunk.delta.content})}\n\n'
+        except Exception as e:
+            logger.error(f"OpenAI stream error: {e}")
+            return f'data: {json.dumps({"text": "", "finish_reason": "error"})}\n\n'
 
     return StreamingResponse(openai_stream(), media_type="text/event-stream")
 
