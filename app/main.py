@@ -2,12 +2,10 @@ import json
 import logging
 import os
 from itertools import chain
-from pathlib import Path
 
 
 import httpx
 import openai
-from google import generativeai as genai
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 
@@ -109,36 +107,27 @@ MODEL_PROVIDER_MAP = {
 }
 
 openai_api_key = os.environ.get("OPENAI_API_KEY")
-google_api_key = os.environ.get("GOOGLE_API_KEY")
-if google_api_key:
-    genai.configure(api_key=google_api_key)
-    logger.info("Using Google API")
+openai_base_url = os.environ.get("OPENAI_BASE_URL")
+openai.api_key = openai_api_key
+if openai_base_url:
+    openai.base_url = openai_base_url
+is_azure = openai.api_type in ("azure", "azure_ad", "azuread")
+if is_azure:
+    logger.info("Using Azure API")
+    openai_client = openai.AzureOpenAI(
+        azure_endpoint=os.environ.get("OPENAI_AZURE_ENDPOINT"),
+        azure_ad_token_provider=os.environ.get("AZURE_DEPLOYMENT_ID", None),
+    )
+else:
+    logger.info("Using OpenAI API")
+    openai_client = openai.OpenAI()
 
-    RAYCAST_DEFAULT_MODELS = {
-        "chat": "gemini-pro",
-        "quick_ai": "gemini-pro",
-        "commands": "gemini-pro",
-        "api": "gemini-pros",
-    }
-elif openai_api_key:
-    openai.api_key = openai_api_key
-    is_azure = openai.api_type in ("azure", "azure_ad", "azuread")
-    if is_azure:
-        logger.info("Using Azure API")
-        openai_client = openai.AzureOpenAI(
-            azure_endpoint=os.environ.get("OPENAI_AZURE_ENDPOINT"),
-            azure_ad_token_provider=os.environ.get("AZURE_DEPLOYMENT_ID", None),
-        )
-    else:
-        logger.info("Using OpenAI API")
-        openai_client = openai.OpenAI()
-
-    RAYCAST_DEFAULT_MODELS = {
-        "chat": "openai-gpt-3.5-turbo",
-        "quick_ai": "openai-gpt-3.5-turbo",
-        "commands": "openai-gpt-3.5-turbo",
-        "api": "openai-gpt-3.5-turbo",
-    }
+RAYCAST_DEFAULT_MODELS = {
+    "chat": "openai-gpt-3.5-turbo",
+    "quick_ai": "openai-gpt-3.5-turbo",
+    "commands": "openai-gpt-3.5-turbo",
+    "api": "openai-gpt-3.5-turbo",
+}
 
 
 def get_model(raycast_data: dict):
@@ -197,46 +186,6 @@ async def chat_completions_openai(raycast_data: dict):
     return StreamingResponse(openai_stream(), media_type="text/event-stream")
 
 
-async def chat_completions_gemini(raycast_data: dict):
-    model = genai.GenerativeModel(get_model(raycast_data))
-
-    google_message = ""
-    temperature = os.environ.get("TEMPERATURE", 0.5)
-    for msg in raycast_data["messages"]:
-        if "system_instructions" in msg["content"]:
-            google_message += msg["content"]["system_instructions"] + "\n"
-        if "command_instructions" in msg["content"]:
-            google_message += msg["content"]["command_instructions"] + "\n"
-        if "additional_system_instructions" in raycast_data:
-            google_message += raycast_data["additional_system_instructions"] + "\n"
-        if "text" in msg["content"]:
-            google_message += msg["content"]["text"] + "\n"
-        if "temperature" in msg["content"]:
-            temperature = msg["content"]["temperature"]
-
-    logger.debug(f"text: {google_message}")
-    result = model.generate_content(
-        google_message,
-        stream=True,
-        generation_config=genai.types.GenerationConfig(
-            candidate_count=1,
-            max_output_tokens=MAX_TOKENS,
-            temperature=temperature,
-        ),
-    )
-
-    def gemini_stream():
-        try:
-            for chunk in result:
-                logger.debug(f"Gemini response chunk: {chunk.text}")
-                yield f'data: {json.dumps({"text": chunk.text})}\n\n'
-        except genai.types.BlockedPromptException as e:
-            logger.debug(f"Gemini response finish: {e}")
-            yield f'data: {json.dumps({"text": "", "finish_reason": e})}\n\n'
-
-    return StreamingResponse(gemini_stream(), media_type="text/event-stream")
-
-
 @app.post("/api/v1/ai/chat_completions")
 async def chat_completions(request: Request):
     raycast_data = await request.json()
@@ -249,21 +198,52 @@ async def chat_completions(request: Request):
 
     if MODEL_PROVIDER_MAP[model_id] == "openai" and openai_api_key:
         return await chat_completions_openai(raycast_data)
-    if MODEL_PROVIDER_MAP[model_id] == "google" and google_api_key:
-        return await chat_completions_gemini(raycast_data)
 
 
-@app.api_route("/api/v1/me", methods=["GET"])
-async def proxy(request: Request):
-    logger.info("Received request to /api/v1/me")
+@app.api_route("/api/v1/me/trial_status", methods=["GET"])
+async def proxy_trial_status(request: Request):
+    logger.info("Received request to /api/v1/me/trail_status")
     headers = {key: value for key, value in request.headers.items()}
+    headers["host"] = "backend.raycast.com"
     req = ProxyRequest(
-        str(request.url),
+        "https://backend.raycast.com/api/v1/me/trial_status",
         request.method,
         headers,
         await request.body(),
         query_params=request.query_params,
     )
+    # logger.info(f"Request: {req}")
+    response = await pass_through_request(http_client, req)
+    content = response.content
+    if response.status_code == 200:
+        data = json.loads(content)
+        data["organizations"] = []
+        data["trial_limits"] = {
+            "commands_limit": 998,
+            "quicklinks_limit": 999,
+            "snippets_limit": 999,
+        }
+        content = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    return Response(
+        status_code=response.status_code,
+        content=content,
+        headers=response.headers,
+    )
+
+
+@app.api_route("/api/v1/me", methods=["GET"])
+async def proxy_me(request: Request):
+    logger.info("Received request to /api/v1/me")
+    headers = {key: value for key, value in request.headers.items()}
+    headers["host"] = "backend.raycast.com"
+    req = ProxyRequest(
+        "https://backend.raycast.com/api/v1/me",
+        request.method,
+        headers,
+        await request.body(),
+        query_params=request.query_params,
+    )
+    # logger.info(f"Request: {req}")
     response = await pass_through_request(http_client, req)
     content = response.content
     if response.status_code == 200:
@@ -293,8 +273,9 @@ async def proxy(request: Request):
 async def proxy_models(request: Request):
     logger.info("Received request to /api/v1/ai/models")
     headers = {key: value for key, value in request.headers.items()}
+    headers["host"] = "backend.raycast.com"
     req = ProxyRequest(
-        str(request.url),
+        "https://backend.raycast.com/api/v1/ai/models",
         request.method,
         headers,
         await request.body(),
@@ -323,8 +304,10 @@ async def proxy_options(request: Request, path: str):
     # add https when running via https gateway
     if "https://" not in url:
         url = url.replace("http://", "https://")
+
+    headers["host"] = "backend.raycast.com"
     req = ProxyRequest(
-        str(request.url),
+        "https://backend.raycast.com/" + path,
         request.method,
         headers,
         await request.body(),
@@ -341,22 +324,8 @@ async def proxy_options(request: Request, path: str):
 if __name__ == "__main__":
     import uvicorn
 
-    current_dir = Path(__file__).parent.parent
-
-    if os.environ.get("CERT_FILE") and os.environ.get("KEY_FILE"):
-        ssl_cert_path = Path(os.environ.get("CERT_FILE"))
-        ssl_key_path = Path(os.environ.get("KEY_FILE"))
-    elif (current_dir / "cert").exists():
-        ssl_cert_path = current_dir / "cert" / "backend.raycast.com.cert.pem"
-        ssl_key_path = current_dir / "cert" / "backend.raycast.com.key.pem"
-    else:
-        ssl_cert_path = None
-        ssl_key_path = None
-
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=443,
-        ssl_certfile=ssl_cert_path,
-        ssl_keyfile=ssl_key_path,
+        port=80,
     )
