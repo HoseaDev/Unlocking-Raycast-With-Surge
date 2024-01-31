@@ -7,6 +7,16 @@ Docker 服务是一个简单的 [Raycast AI](https://raycast.com/)API 代理。�
 
 Docker 服务修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)。由于我在迁移的时候出现了问题，新建此仓库后失去了 `fork` 的属性。但保留了 `.git` 贡献历史。
 
+在开始之前，请确保你拥有以下条件：
+
+-   Surge 激活版本
+-   一台云服务器，拥有 Docker、公网 IP
+-   一个域名
+
+本文用到的的服务器配置为：Ubuntu 22.04，1Panel + OpenResty + Docker
+
+鉴于会折腾 MiTM 的朋友应该是有一定基础的，本文我主要给出具体的配置文件，还有自己的一些踩坑。
+
 整体的配置思路如下：
 
 Raycast - Surge MiTM 覆写请求 URL - 云服务器 - Nginx 反向代理 - Docker 后端。
@@ -14,6 +24,8 @@ Raycast - Surge MiTM 覆写请求 URL - 云服务器 - Nginx 反向代理 - Dock
 ## 使用方法
 
 ### 在服务端启动 Docker
+
+由于 Raycast 的 AI 功能请求与返回都进行了包装，直接请求类似 OpenAI 的接口并不可行，需要使用一个转接器来模拟 Raycast 的后端转接格式，这就要用到 Docker 服务。
 
 此 Docker 镜像修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)，修复了一些迁移到服务器上会导致的问题。
 
@@ -24,7 +36,18 @@ docker run --name Raycast \
     -p 12443:80 -e LOG_LEVEL=INFO -d arthals/raycast-backend:latest
 ```
 
-随后，这个代理会在 `12443` 端口启动代理，为了使用此代理，你还需要参照 https://arthals.ink/posts/coding/unlocking-raycast-with-surge 或按照下文设置 Surge MiTM 与服务器 Nginx 配置以支持流式传输。
+这会在你的服务器上的 `12443` 端口启动一个 Raycast 的 API 代理服务，你需要自行修改 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`。
+
+这里存在两处需要注意的地方：
+
+1. 原仓库给的示例是 `OPENAI_API_BASE`，但是由于 `openai` 库升级了，所以现在需要使用 `OPENAI_BASE_URL`。
+2. 原仓库给的示例有一个 `--dns 1.1.1.1` 的配置，但是由于众所周知的原因，腾讯云的服务器无法访问这个 DNS 服务器，所以你需要移除这个配置。
+
+注意 OPENAI_BASE_URL 的计算方式如下：
+
+如果你的 API 请求的 URL 是 https://api-proxy.com/v1/chat/completions ，那么就是 https://api-proxy.com/v1/
+
+为了使用此代理，你还需要参照 https://arthals.ink/posts/coding/unlocking-raycast-with-surge 或按照下文设置 Surge MiTM 与服务器 Nginx 配置以支持流式传输。
 
 SSL 证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge 和服务器 Docker 均无关。
 
@@ -32,7 +55,11 @@ SSL 证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge �
 
 ### Nginx 服务端配置
 
-Nginx 反向代理配置如下：
+按照正常的 1Panel + OpenResty 配置一个反向代理网站，将 `https://custome-backend.self.com/` 代理到 `http://127.0.0.1:123443/` 即可。
+
+特别地，你需要修改反向代理的配置文件，移除默认的压缩算法以支持流式传输，你可以参见：https://github.com/lobehub/lobe-chat/discussions/531
+
+修改后的反向代理配置文件示例如下：
 
 ```nginx
 location ^~ / {
@@ -235,3 +262,9 @@ function returnDefaultResponse() {
 
 launch();
 ```
+
+## Credit
+
+[wibus-wee/activation-script](https://github.com/wibus-wee/activation-script)
+
+[yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)
