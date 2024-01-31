@@ -1,11 +1,19 @@
 # Unlocking-Raycast-With-Surge
 
-这是一个简单的 [Raycast AI](https://raycast.com/)API 代理。它允许您在不订阅的情况下使用 [Raycast AI](https://raycast.com/ai)
+利用 Surge 的 MiTM 功能拦截请求，并利用 Docker 服务模拟后端操作，从而实现 Raycast 的激活。
+
+Docker 服务是一个简单的 [Raycast AI](https://raycast.com/)API 代理。它允许您在不订阅的情况下使用 [Raycast AI](https://raycast.com/ai)
 应用。它是一个简单的代理，将 raycast 的请求转换格式转发到 OpenAI 的 API，响应后再实时转换格式返回。
+
+Docker 服务修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)。由于我在迁移的时候出现了问题，新建此仓库后失去了 `fork` 的属性。但保留了 `.git` 贡献历史。
+
+整体的配置思路如下：
+
+Raycast - Surge MiTM 覆写请求 URL - 云服务器 - Nginx 反向代理 - Docker 后端。
 
 ## 使用方法
 
-### Docker 服务端快速启动
+### 在服务端启动 Docker
 
 此 Docker 镜像修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)，修复了一些迁移到服务器上会导致的问题。
 
@@ -16,13 +24,9 @@ docker run --name Raycast \
     -p 12443:80 -e LOG_LEVEL=INFO -d arthals/raycast-backend:latest
 ```
 
-随后，这个代理会在 `12443` 端口启动代理，为了使用此代理，你还需要参照 https://arthals.ink/posts/coding/unlocking-raycast-with-surge 设置 Surge MiTM 与服务器 Nginx 配置以支持流式传输。
+随后，这个代理会在 `12443` 端口启动代理，为了使用此代理，你还需要参照 https://arthals.ink/posts/coding/unlocking-raycast-with-surge 或按照下文设置 Surge MiTM 与服务器 Nginx 配置以支持流式传输。
 
-整体的配置思路如下：
-
-Raycast - Surge MiTM 覆写请求 URL - 云服务器 - Nginx 反向代理 - Docker 后端。
-
-其中，证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge 和服务器 Docker 均无关。
+SSL 证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge 和服务器 Docker 均无关。
 
 本镜像只支持服务器使用，本地使用需要能自行签发 SSL 证书。若本地使用建议参照原仓库操作。
 
@@ -67,7 +71,13 @@ ca-p12 = MIIKP...
 raycast-activate-backend.raycast.com = type=http-request,pattern=^https://backend.raycast.com,max-size=0,debug=1,script-path=activator.js
 ```
 
+请注意，你需要将 `ca-passphrase` 与 `ca-p12` 替换为你自己的 Surge CA 密码与证书。
+
 其中用到的 `activator.js` 脚本修改自 [wibus-wee/activation-script](https://github.com/wibus-wee/activation-script/)，你需要自行修改其中的 `https://custome-backend.self.com` 为你的服务器地址。
+
+请将 `activator.js` 放置在 Surge 配置文件夹下。
+
+Activator.js 内容如下（亦可在本仓库找到）：
 
 ```js
 'use strict';
