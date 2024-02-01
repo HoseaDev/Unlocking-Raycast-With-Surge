@@ -7,7 +7,8 @@ WORKDIR /project
 # copy the rest of the application files
 COPY requirements.txt /project/
 # install dependencies
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app /project/app
 COPY scripts/entrypoint.sh /
