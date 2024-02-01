@@ -67,7 +67,21 @@ SERVICE_PROVIDERS = {
             "name": "GPT-3.5 Turbo",
             "provider": "openai",
             "provider_name": "OpenAI",
-            "requires_better_ai": True,
+            "requires_better_ai": False,
+            "features": [
+                "chat",
+                "quick_ai",
+                "commands",
+                "api",
+            ],
+        },
+        {
+            "id": "openai-gpt-3.5-turbo-1106",
+            "model": "gpt-3.5-turbo-1106",
+            "name": "GPT-3.5 Turbo 16k",
+            "provider": "openai",
+            "provider_name": "OpenAI",
+            "requires_better_ai": False,
             "features": [
                 "chat",
                 "quick_ai",
@@ -90,10 +104,6 @@ SERVICE_PROVIDERS = {
             ],
         },
     ],
-}
-
-MODEL_PROVIDER_MAP = {
-    p["model"]: p["provider"] for p in chain.from_iterable(SERVICE_PROVIDERS.values())
 }
 
 openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -121,12 +131,23 @@ RAYCAST_DEFAULT_MODELS = {
 
 
 def get_model(raycast_data: dict):
-    return FORCE_MODEL or raycast_data["model"]
+    is_command_model = False
+    try:
+        is_command_model = raycast_data["messages"][0]["content"]["model"]
+    except Exception:
+        pass
+    return FORCE_MODEL or is_command_model or raycast_data["model"]
 
 
 async def chat_completions_openai(raycast_data: dict):
     openai_messages = []
     temperature = os.environ.get("TEMPERATURE", 0.5)
+
+    try:
+        temperature = raycast_data["messages"][0]["content"]["temperature"]
+    except Exception:
+        pass
+
     for msg in raycast_data["messages"]:
         if "system_instructions" in msg["content"]:
             openai_messages.append(
@@ -155,16 +176,16 @@ async def chat_completions_openai(raycast_data: dict):
             temperature = msg["content"]["temperature"]
 
     def openai_stream():
-        stream = openai_client.chat.completions.create(
-            model=get_model(raycast_data),
-            messages=openai_messages,
-            max_tokens=MAX_TOKENS,
-            n=1,
-            stop=None,
-            temperature=temperature,
-            stream=True,
-        )
         try:
+            stream = openai_client.chat.completions.create(
+                model=get_model(raycast_data),
+                messages=openai_messages,
+                max_tokens=MAX_TOKENS,
+                n=1,
+                stop=None,
+                temperature=temperature,
+                stream=True,
+            )
             for response in stream:
                 chunk = response.choices[0]
                 if chunk.finish_reason is not None:
@@ -173,9 +194,27 @@ async def chat_completions_openai(raycast_data: dict):
                 if chunk.delta and chunk.delta.content:
                     logger.debug(f"OpenAI response chunk: {chunk.delta.content}")
                     yield f'data: {json.dumps({"text": chunk.delta.content})}\n\n'
+        except openai.APIConnectionError as e:
+            # print(e.__cause__)
+            error_json = {"error": {"message": e.__cause__}}
+            yield f"data: {json.dumps(error_json)}"
+            return
+
+        except openai.APIStatusError as e:
+            # print("Another non-200-range status code was received")
+            # print(e.status_code)
+            # print(e.response)
+            error_json = {
+                "error": {"message": f"HTTP {e.status_code}: {type(e).__name__}"}
+            }
+            yield f"data: {json.dumps(error_json)}"
+            return
+
         except Exception as e:
-            logger.error(f"OpenAI stream error: {e}")
-            return f'data: {json.dumps({"text": "", "finish_reason": "error"})}\n\n'
+            logger.error(f"Unknown error: {e}")
+            error_json = {"error": {"message": "Unknown error"}}
+            yield f"data: {json.dumps(error_json)}"
+            return
 
     return StreamingResponse(openai_stream(), media_type="text/event-stream")
 
@@ -190,8 +229,15 @@ async def chat_completions(request: Request):
     model_id = get_model(raycast_data)
     logger.debug(f"Use model id: {model_id}")
 
-    if MODEL_PROVIDER_MAP[model_id] == "openai" and openai_api_key:
+    if openai_api_key:
         return await chat_completions_openai(raycast_data)
+
+    # nokey
+    error_json = {"error": {"message": "No OpenAI API key provided"}}
+    return Response(
+        f"data: {json.dumps(error_json)}\n\n",
+        status_code=500,
+    )
 
 
 @app.api_route("/api/v1/me/trial_status", methods=["GET"])
@@ -387,6 +433,20 @@ async def proxy_translations(request: Request):
             stream=False,
         )
 
+    except openai.APIStatusError as e:
+        logger.error(f"OpenAI error: {e}")
+        return Response(
+            status_code=500,
+            content=json.dumps(
+                {
+                    "error": {
+                        "code": e.status_code,
+                        "message": f"HTTP {e.status_code}: {type(e).__name__}",
+                    }
+                }
+            ),
+        )
+
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
         return Response(
@@ -394,8 +454,8 @@ async def proxy_translations(request: Request):
             content=json.dumps(
                 {
                     "error": {
-                        "code": "internal_server_error",
-                        "message": "Internal Server Error",
+                        "code": 500,
+                        "message": "Unknown error",
                     }
                 }
             ),

@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Union
 
 import httpx
 from fastapi import HTTPException
@@ -44,7 +43,7 @@ async def pass_through_request(client: httpx.AsyncClient, request: ProxyRequest)
             params=request.query_params,
             timeout=60.0,
         )
-    except httpx.RequestError as e:
+    except httpx.RequestError:
         raise HTTPException(
             status_code=500, detail="Error occurred while forwarding request"
         )
