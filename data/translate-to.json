@@ -1,0 +1,10 @@
+{
+    "data": {
+        "translations": [
+            {
+                "translatedText": "在祖父处",
+                "detectedSourceLanguage": "tr" // if auto detect is enabled
+            }
+        ]
+    }
+}
