@@ -546,7 +546,7 @@ async def proxy_sync_put(request: Request):
             f.write(data)
 
     else:
-        with open(f"./sync/{bearer_token}.json", "r") as f:
+        with open(f"./sync/{email}.json", "r") as f:
             old_data = json.loads(f.read())
         new_data = json.loads(data)
         # 查找 old_data["updated"] 字段中是否存在 id 与 new_data["deleted"] 字段的列表中的 id 相同的元素

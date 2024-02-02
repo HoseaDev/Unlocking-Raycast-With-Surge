@@ -28,9 +28,11 @@ Raycast - Surge MiTM 覆写请求 URL - 云服务器 - Nginx 反向代理 - Dock
 
 ## 使用方法
 
-### 在服务端启动 Docker
+### 在服务端启动后端服务
 
-由于 Raycast 的 AI 功能请求与返回都进行了包装，直接请求类似 OpenAI 的接口并不可行，需要使用一个转接器来模拟 Raycast 的后端转接格式，这就要用到 Docker 服务。
+由于 Raycast 的 AI 功能请求与返回都进行了包装，直接请求类似 OpenAI 的接口并不可行，需要使用一个转接器来模拟 Raycast 的后端转接格式，这就需要我们自行搭建并运行后端。
+
+#### 基于 Docker 的方法
 
 此 Docker 镜像修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)，修复了一些迁移到服务器上会导致的问题。
 
@@ -54,9 +56,20 @@ docker run --name Raycast \
 
 为了使用此代理，你还需要参照 https://arthals.ink/posts/coding/unlocking-raycast-with-surge 或按照下文设置 Surge MiTM 与服务器 Nginx 配置以支持流式传输。
 
-SSL 证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge 和服务器 Docker 均无关。
+SSL 证书直接通过 1Panel 的 Nginx（Openresty）搞定就行。与 Surge 和服务器后端均无关。
 
-本镜像只支持服务器使用，本地使用需要能自行签发 SSL 证书。若本地使用建议参照原仓库操作。
+本仓库只支持服务器使用，本地使用需要能自行签发 SSL 证书。若本地使用建议参照原仓库操作。
+
+#### 基于 Python + PM2 的方法
+
+你亦可以简单的使用 Python 和 PM2 来启动服务：
+
+```bash
+# 安装依赖
+pip install -r requirements.txt
+# 启动服务
+pm2 start 'OPENAI_API_KEY="sk-xxxx" OPENAI_BASE_URL="https://api.openai.com/v1/" uvicorn app.main:app --host 0.0.0.0 --port 12443 --reload' --name Raycast
+```
 
 ### Nginx 服务端配置
 
