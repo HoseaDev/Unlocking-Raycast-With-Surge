@@ -3,11 +3,12 @@ import logging
 import os
 import re
 from itertools import chain
+from datetime import datetime
 
 
 import httpx
 import openai
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Query
 from fastapi.responses import StreamingResponse
 
 from app.utils import ProxyRequest, pass_through_request
@@ -50,6 +51,15 @@ def check_auth(request: Request):
         logger.warn(f"User not allowed: {user_email}")
         return False
     return True
+
+
+def get_current_utc_time():
+    # 获取当前时间
+    current_time = datetime.utcnow()
+
+    # 转换为ISO 8601格式，末尾添加'Z'表示UTC时间
+    iso_format_time = current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return iso_format_time
 
 
 @app.on_event("shutdown")
@@ -303,8 +313,15 @@ async def proxy_me(request: Request):
         data["has_better_ai"] = True
         data["has_running_subscription"] = True
         data["can_upgrade_to_pro"] = False
+        data["can_upgrade_to_better_ai"] = False
         data["can_use_referral_codes"] = True
         data["admin"] = True
+        # 为了移除自己界面的订阅字样
+        data["subscription"] = None
+        data["stripe_subscription_id"] = None
+        data["stripe_subscription_status"] = None
+        data["stripe_subscription_interval"] = None
+        data["stripe_subscription_current_period_end"] = None
         add_user(request, data["email"])
         content = json.dumps(data, ensure_ascii=False).encode("utf-8")
     return Response(
@@ -478,19 +495,85 @@ async def proxy_translations(request: Request):
     return Response(status_code=200, content=json.dumps(res))
 
 
-""" Reason: Unable to parse translation response
-Domain: network
-Time: 14:01:37.435
-Service: Translate
-Underlying: 
-	Reason: Decoding proccess encountered corrupted or invalid data
-	Coding path: 
-	Description: The given data was not valid JSON.
-	Underlying: 
-		Domain: NSCocoaErrorDomain 3840
-		Reason: The data is not in the correct format.
-		NSDebugDescription: Unexpected character 'd' around line 1, column 1.
-		NSJSONSerializationErrorIndex: 0 """
+@app.api_route("/api/v1/me/sync", methods=["GET"])
+async def proxy_sync_get(request: Request, after: str = Query(None)):
+    bearer_token = request.headers.get("Authorization", "").split(" ")[1]
+    # 检查是否存在 ./sync 目录
+    if not os.path.exists("./sync"):
+        os.makedirs("./sync")
+    # 检查 sync 目录下是否存在以 bearer_token 命名的 json
+    # 如果存在则返回该 json 内容
+    # 如果不存在则返回空的 json
+    if os.path.exists(f"./sync/{bearer_token}.json"):
+        with open(f"./sync/{bearer_token}.json", "r") as f:
+            data = json.loads(f.read())
+
+        # https://raycast.arthals.ink/api/v1/me/sync?after=2024-02-02T02:27:01.141195Z
+
+        if after:
+            after_time = datetime.fromisoformat(after)
+            data["updated"] = [
+                item
+                for item in data["updated"]
+                if datetime.fromisoformat(item["updated_at"]) > after_time
+            ]
+
+        return Response(json.dumps(data))
+    else:
+        return Response(json.dumps({"updated": [], "updated_at": None, "deleted": []}))
+
+
+@app.api_route("/api/v1/me/sync", methods=["PUT"])
+async def proxy_sync_put(request: Request):
+    bearer_token = request.headers.get("Authorization", "").split(" ")[1]
+    # 检查是否存在 ./sync 目录
+    if not os.path.exists("./sync"):
+        os.makedirs("./sync")
+    data = await request.body()
+    if not os.path.exists(f"./sync/{bearer_token}.json"):
+        # 移除 request.body 中的 deleted 字段
+        data = json.loads(data)
+        data["deleted"] = []
+        updated_time = get_current_utc_time()
+        data["updated_at"] = updated_time
+        for item in data["updated"]:
+            item["created_at"] = item["client_updated_at"]
+            item["updated_at"] = updated_time
+        data = json.dumps(data)
+        with open(f"./sync/{bearer_token}.json", "w") as f:
+            f.write(data)
+
+    else:
+        with open(f"./sync/{bearer_token}.json", "r") as f:
+            old_data = json.loads(f.read())
+        new_data = json.loads(data)
+        # 查找 old_data["updated"] 字段中是否存在 id 与 new_data["deleted"] 字段的列表中的 id 相同的元素
+        # 如果存在则将该元素从 old_data["updated"] 中移除
+        cleaned_data_updated = [
+            item
+            for item in old_data["updated"]
+            if item["id"] not in new_data["deleted"]
+        ]
+
+        updated_time = get_current_utc_time()
+
+        for data in new_data["updated"]:
+            data["created_at"] = data["client_updated_at"]
+            data["updated_at"] = updated_time
+
+        # 添加 new_data["updated"] 中的元素到 cleaned_data_updated
+        cleaned_data_updated.extend(new_data["updated"])
+
+        new_data = {
+            "updated": cleaned_data_updated,
+            "updated_at": updated_time,
+            "deleted": [],
+        }
+
+        with open(f"./sync/{bearer_token}.json", "w") as f:
+            f.write(json.dumps(new_data))
+
+    return Response(json.dumps({"updated_at": updated_time}))
 
 
 # pass through all other requests
