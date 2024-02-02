@@ -498,14 +498,15 @@ async def proxy_translations(request: Request):
 @app.api_route("/api/v1/me/sync", methods=["GET"])
 async def proxy_sync_get(request: Request, after: str = Query(None)):
     bearer_token = request.headers.get("Authorization", "").split(" ")[1]
+    email = USER_SESSION[bearer_token]
     # 检查是否存在 ./sync 目录
     if not os.path.exists("./sync"):
         os.makedirs("./sync")
-    # 检查 sync 目录下是否存在以 bearer_token 命名的 json
+    # 检查 sync 目录下是否存在以 email 命名的 json
     # 如果存在则返回该 json 内容
     # 如果不存在则返回空的 json
-    if os.path.exists(f"./sync/{bearer_token}.json"):
-        with open(f"./sync/{bearer_token}.json", "r") as f:
+    if os.path.exists(f"./sync/{email}.json"):
+        with open(f"./sync/{email}.json", "r") as f:
             data = json.loads(f.read())
 
         # https://raycast.arthals.ink/api/v1/me/sync?after=2024-02-02T02:27:01.141195Z
@@ -526,11 +527,12 @@ async def proxy_sync_get(request: Request, after: str = Query(None)):
 @app.api_route("/api/v1/me/sync", methods=["PUT"])
 async def proxy_sync_put(request: Request):
     bearer_token = request.headers.get("Authorization", "").split(" ")[1]
+    email = USER_SESSION[bearer_token]
     # 检查是否存在 ./sync 目录
     if not os.path.exists("./sync"):
         os.makedirs("./sync")
     data = await request.body()
-    if not os.path.exists(f"./sync/{bearer_token}.json"):
+    if not os.path.exists(f"./sync/{email}.json"):
         # 移除 request.body 中的 deleted 字段
         data = json.loads(data)
         data["deleted"] = []
@@ -540,7 +542,7 @@ async def proxy_sync_put(request: Request):
             item["created_at"] = item["client_updated_at"]
             item["updated_at"] = updated_time
         data = json.dumps(data)
-        with open(f"./sync/{bearer_token}.json", "w") as f:
+        with open(f"./sync/{email}.json", "w") as f:
             f.write(data)
 
     else:
@@ -570,7 +572,7 @@ async def proxy_sync_put(request: Request):
             "deleted": [],
         }
 
-        with open(f"./sync/{bearer_token}.json", "w") as f:
+        with open(f"./sync/{email}.json", "w") as f:
             f.write(json.dumps(new_data))
 
     return Response(json.dumps({"updated_at": updated_time}))
