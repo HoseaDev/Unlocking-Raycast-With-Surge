@@ -2,7 +2,12 @@
 
 利用 Surge 的 MiTM 功能拦截请求，并利用 Docker 服务模拟后端操作，从而实现 Raycast 的激活。
 
-Docker 服务是一个简单的 [Raycast](https://raycast.com/) 的 API 代理。它允许您在不订阅的情况下使用包括 [Raycast AI](https://raycast.com/ai) 、翻译在内的 Pro 功能（但是都需要你拥有自己的 API Key）。它的工作原理是，对于非 AI Completions 之外的某些请求的返回值修改关键字段，而对于 AI Completions 的请求，将 Raycast 的请求转换格式转发到 OpenAI 的 API，响应后再实时转换格式返回。对于翻译功能，目前的实现也是基于 OpenAI 的，你可以自行换成别的。
+Docker 服务是一个简单的 [Raycast](https://raycast.com/) 的 API 代理。它允许您在不订阅的情况下使用包括 [Raycast AI](https://raycast.com/ai) 、翻译、同步在内的 Pro 功能（但是都需要你拥有自己的 API Key）。实现原理如下：
+
+-   Raycast Pro：在服务端修改 `/me`、`/ai/models` 等关键请求的返回字段。
+-   Raycast AI：对于非 AI Completions 之外的某些请求的返回值修改关键字段，而对于 AI Completions 的请求，将 Raycast 的请求转换格式转发到 OpenAI 的 API，响应后再实时转换格式返回。
+-   Translator：目前的翻译功能实现也是基于 OpenAI 的，会很慢，你可以自行换成别的商业 API 。
+-   Sync：基于本地 JSON 处理，没有用到数据库，避免了额外的配置，但是会有一定的性能损失。
 
 Docker 服务修改自 [yufeikang/raycast_api_proxy](https://github.com/yufeikang/raycast_api_proxy)。由于我在迁移的时候出现了问题，新建此仓库后失去了 `fork` 的属性。但保留了 `.git` 贡献历史。
 
