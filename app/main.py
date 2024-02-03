@@ -86,8 +86,8 @@ SERVICE_PROVIDERS = {
             ],
         },
         {
-            "id": "openai-gpt-3.5-turbo-1106",
-            "model": "gpt-3.5-turbo-1106",
+            "id": "openai-gpt-3.5-turbo-0125",
+            "model": "gpt-3.5-turbo-0125",
             "name": "GPT-3.5 Turbo 16k",
             "provider": "openai",
             "provider_name": "OpenAI",
@@ -509,7 +509,7 @@ async def proxy_sync_get(request: Request, after: str = Query(None)):
         with open(f"./sync/{email}.json", "r") as f:
             data = json.loads(f.read())
 
-        # https://raycast.arthals.ink/api/v1/me/sync?after=2024-02-02T02:27:01.141195Z
+        # https://backend.raycast.com/api/v1/me/sync?after=2024-02-02T02:27:01.141195Z
 
         if after:
             after_time = datetime.fromisoformat(after)

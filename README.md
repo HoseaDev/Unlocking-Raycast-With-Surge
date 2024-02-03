@@ -236,6 +236,10 @@ function launch() {
                     continue;
                 }
                 if (typeof activator[module][key] === 'object') {
+                    // 检查是否为通配符 '*'，如果是，则匹配任何以 activator[module].base 开头的URL
+                    if (activator[module][key].base === '*' && url.startsWith(activator[module].base)) {
+                        return activator[module][key].func();
+                    }
                     if (url === `${activator[module].base}/${activator[module][key].base}`) {
                         return activator[module][key].func();
                     }
