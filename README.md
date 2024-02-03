@@ -285,6 +285,69 @@ function returnDefaultResponse() {
 launch();
 ```
 
+### 在本地启动后端服务
+
+如果你想要在本地使用这个服务，那么你需要设置 httpx 的 verify 为 false，然后为了避免后端请求 backend.raycast.com 又请求回自身，你还需要修改 pass_through 函数，额外设置一个私有的 header，然后再在 Surge script 里判断一下，这样做就可以不做自签名证书使用了。
+
+例如：
+
+```python
+# app/main.py
+# 修改 http_client = httpx.AsyncClient() 为
+http_client = httpx.AsyncClient(verify=False)
+
+# app/utils.py
+# 修改 pass_through 函数，原先为：
+"""
+async def pass_through_request(client: httpx.AsyncClient, request: ProxyRequest):
+    ...
+    headers["accept-encoding"] = "identity"
+    try:
+        response = await client.request(
+            request.method,
+            url,
+            headers=headers,
+            data=request.body,
+            params=request.query_params,
+            timeout=60.0,
+        )
+    ...
+"""
+# 修改后为：
+async def pass_through_request(client: httpx.AsyncClient, request: ProxyRequest):
+    ...
+    headers["accept-encoding"] = "identity"
+    headers["arthals"] = "arthals"
+    try:
+        response = await client.request(
+            request.method,
+            url,
+            headers=headers,
+            data=request.body,
+            params=request.query_params,
+            timeout=60.0,
+        )
+    ...
+```
+
+对于 activator.js，你需要修改为：
+
+```js
+function raycastActivate() {
+    // console.log($request.url.replace('https://backend.raycast.com', 'https://raycast.arthals.ink'));
+    // 检查 $request.headers 是否有 arthals 字段
+    if ($request.headers['arthals']) {
+        $done({});
+        return;
+    }
+    $done({
+        url: $request.url.replace('https://backend.raycast.com', 'http://localhost:12443'),
+        headers: $request.headers,
+        body: $request.body,
+    });
+}
+```
+
 ## Credit
 
 [wibus-wee/activation-script](https://github.com/wibus-wee/activation-script)
