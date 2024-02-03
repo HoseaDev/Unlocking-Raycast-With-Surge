@@ -334,7 +334,6 @@ async def pass_through_request(client: httpx.AsyncClient, request: ProxyRequest)
 
 ```js
 function raycastActivate() {
-    // console.log($request.url.replace('https://backend.raycast.com', 'https://raycast.arthals.ink'));
     // 检查 $request.headers 是否有 arthals 字段
     if ($request.headers['arthals']) {
         $done({});
